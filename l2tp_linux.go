@@ -68,24 +68,28 @@ const (
     L2TP_SEQ_ALL    = 2
 )
 
+// Structure to hold all tunnel details
 type L2tpTunnel struct {
-    ID      uint16
-    HdrSize uint32
-    Name    string
-    Version uint32
-    MaxAttr uint32
-    Ops     []GenlOp
-    Groups  []GenlMulticastGroup
+    ID          uint32      // Local tunnel ID
+    PeerID      uint32      // Peer tunnel ID
+    Name        string      // Tunnel endpoint name
+    Cookie      string      // Tunnel cookie
+    LocalAddr   string      // Local IP address in format 'ipaddr:port'
+    PeerAddr    string      // Peer IP address in format 'ipaddr:port'
+    Fd          uint32      // [Optional] Local UDP socket file descriptor to use
 }
 
-// Retrieve the GeNl driver version
+//
+// 1. Utility functions:
+//
+// Retrieve the GeNl L2TP driver version supported
 func (h *Handle) L2tpGetGenlVersion() (uint32, error) {
     // Read genl driver details
     l2tp, err := GenlFamilyGet(L2TP_GENL_NAME)
     if (err != nil) {
         return 0, err
     }
-    // Retrieve the versiom
+    // Retrieve the version
     return l2tp.Version, nil
 }
 
@@ -93,6 +97,64 @@ func L2tpGetGenlVersion() (uint32, error) {
     return pkgHandle.L2tpGetGenlVersion()
 }
 
+// Retrieve the GeNl L2TP family ID
+func (h *Handle) L2tpGetGenlFamilyId() (uint16, error) {
+    // Read genl driver details
+    l2tp, err := GenlFamilyGet(L2TP_GENL_NAME)
+    if (err != nil) {
+        return 0, err
+    }
+    // Retrieve the family/driver ID
+    return l2tp.ID, nil
+}
+
+func L2tpGetGenlFamilyId() (uint16, error) {
+    return pkgHandle.L2tpGetGenlFamilyId()
+}
+
+// Retrieve the GeNl L2TP family ID and version
+func (h *Handle) L2tpGetGenlDetails() (uint32, uint16, error) {
+    // Read genl driver details
+    l2tp, err := GenlFamilyGet(L2TP_GENL_NAME)
+    if (err != nil) {
+        return 0, 0, err
+    }
+    // Retrieve the version and family/driver ID
+    return l2tp.Version, l2tp.ID, nil
+}
+
+func L2tpGetGenlDetails() (uint32, uint16, error) {
+    return pkgHandle.L2tpGetGenlDetails()
+}
+
+
+//
+// 2. Tunnel related APIs
+//
+
 // Build a tunnel
+// func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
+//     msg := &nl.Genlmsg{
+//         Command: nl.L2TP_CMD_TUNNEL_CREATE,
+//         Version: nl.GENL_GTP_VERSION,
+//     }
+//     req := h.newNetlinkRequest(int(f.ID), unix.NLM_F_EXCL|unix.NLM_F_ACK)
+//     req.AddData(msg)
+//     req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_VERSION, nl.Uint32Attr(pdp.Version)))
+//     req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_LINK, nl.Uint32Attr(uint32(link.Attrs().Index))))
+//     req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_PEER_ADDRESS, []byte(pdp.PeerAddress.To4())))
+//     req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_MS_ADDRESS, []byte(pdp.MSAddress.To4())))
+
+//     switch pdp.Version {
+//     case 0:
+//         req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_TID, nl.Uint64Attr(pdp.TID)))
+//         req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_FLOW, nl.Uint16Attr(pdp.Flow)))
+//     case 1:
+//         req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_I_TEI, nl.Uint32Attr(pdp.ITEI)))
+//         req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_O_TEI, nl.Uint32Attr(pdp.OTEI)))
+//     default:
+//         return fmt.Errorf("unsupported GTP version: %d", pdp.Version)
+//     }
+//     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
 
 

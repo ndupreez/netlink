@@ -1,11 +1,12 @@
 package netlink
 
 import (
-    // "fmt"
+    "fmt"
     // "syscall"
-
-    // "github.com/ndupreez/netlink/nl"
-    // "golang.org/x/sys/unix"
+    "errors"
+    "net"
+    "github.com/ndupreez/netlink/nl"
+    "golang.org/x/sys/unix"
 )
 
 
@@ -19,6 +20,7 @@ const (
     L2TP_GENL_NAME = "l2tp"
     L2TP_ENCAPTYPE_UDP = 0
     L2TP_PWTYPE_ETH = 0x0005
+    L2TP_PROTO_VERSION = 3
 )
 
 const (
@@ -45,6 +47,10 @@ const (
     L2TP_ATTR_COOKIE            = 15    /* 0, 4 or 8 bytes */
     L2TP_ATTR_PEER_COOKIE       = 16    /* 0, 4 or 8 bytes */
     L2TP_ATTR_FD                = 23
+    L2TP_ATTR_IP_SADDR          = 24    /* u32 */
+    L2TP_ATTR_IP_DADDR          = 25    /* u32 */
+    L2TP_ATTR_UDP_SPORT         = 26    /* u16 */
+    L2TP_ATTR_UDP_DPORT         = 27    /* u16 */
     L2TP_ATTR_MTU               = 28
     L2TP_ATTR_STATS             = 30    /* nested */
 )
@@ -70,14 +76,21 @@ const (
 
 // Structure to hold all tunnel details
 type L2tpTunnel struct {
-    ID          uint32      // Local tunnel ID
-    PeerID      uint32      // Peer tunnel ID
-    Name        string      // Tunnel endpoint name
-    Cookie      string      // Tunnel cookie
-    LocalAddr   string      // Local IP address in format 'ipaddr:port'
-    PeerAddr    string      // Peer IP address in format 'ipaddr:port'
-    Fd          uint32      // [Optional] Local UDP socket file descriptor to use
+    ID          uint32          // Local tunnel ID
+    PeerID      uint32          // Peer tunnel ID
+    Name        string          // Tunnel endpoint name
+    Cookie      string          // Tunnel cookie
+    LocalAddr   string          // Local IP address in format 'ipaddr:port'
+    PeerAddr    string          // Peer IP address in format 'ipaddr:port'
+    Fd          uint32          // [Optional] Local UDP socket file descriptor to use
+    Conn        *net.UDPConn    // Socket
 }
+
+// Context to hold L2TP related info across multiple sessions
+type L2tpContext struct {
+
+}
+
 
 //
 // 1. Utility functions:
@@ -133,28 +146,61 @@ func L2tpGetGenlDetails() (uint32, uint16, error) {
 //
 
 // Build a tunnel
-// func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
-//     msg := &nl.Genlmsg{
-//         Command: nl.L2TP_CMD_TUNNEL_CREATE,
-//         Version: nl.GENL_GTP_VERSION,
-//     }
-//     req := h.newNetlinkRequest(int(f.ID), unix.NLM_F_EXCL|unix.NLM_F_ACK)
-//     req.AddData(msg)
-//     req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_VERSION, nl.Uint32Attr(pdp.Version)))
-//     req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_LINK, nl.Uint32Attr(uint32(link.Attrs().Index))))
-//     req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_PEER_ADDRESS, []byte(pdp.PeerAddress.To4())))
-//     req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_MS_ADDRESS, []byte(pdp.MSAddress.To4())))
+func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
+    // HACK HACK
+    _, L2tpGlNetlinkID, err := pkgHandle.L2tpGetGenlDetails()
+    if (err != nil) {
+        return 1000, err
+    }
+    msg := &nl.Genlmsg{
+        Command: L2TP_CMD_TUNNEL_CREATE,
+        Version: 1,
+    }
+    var localAddr *net.UDPAddr
+    var remoteAddr *net.UDPAddr
+    var addrErr error
+    // Resolve the 2 endpoint addresses
+    if (len(tunnel.LocalAddr) != 0) {
+        localAddr, addrErr = net.ResolveUDPAddr("udp", tunnel.LocalAddr)
+        if (addrErr != nil) {
+            return 1001, addrErr
+        }
+    }
+    if (len(tunnel.PeerAddr) != 0) {
+        remoteAddr, addrErr = net.ResolveUDPAddr("udp", tunnel.PeerAddr)
+        if (addrErr != nil) {
+            return 1002, addrErr
+        }
+    } else {
+        return 1003, errors.New("Peer address not found")
+    }
+    // Open the socket
+    var connErr error
+    tunnel.Conn, connErr = net.DialUDP("udp", localAddr, remoteAddr)
+    if (connErr != nil) {
+        return 1004, connErr
+    }
+    connFile, _ := tunnel.Conn.File()
+    tunnel.Fd = (uint32)(connFile.Fd())
+    fmt.Printf("Conn is : %s (fd: %d) \n", tunnel.Conn, tunnel.Fd)
+    req := h.newNetlinkRequest(int(L2tpGlNetlinkID), 0)
+    req.AddData(msg)
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(1000)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_CONN_ID, nl.Uint32Attr(2000)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_PROTO_VERSION, nl.Uint8Attr(L2TP_PROTO_VERSION)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_ENCAP_TYPE, nl.Uint16Attr(L2TP_ENCAPTYPE_UDP)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_FD, nl.Uint32Attr(tunnel.Fd)))
 
-//     switch pdp.Version {
-//     case 0:
-//         req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_TID, nl.Uint64Attr(pdp.TID)))
-//         req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_FLOW, nl.Uint16Attr(pdp.Flow)))
-//     case 1:
-//         req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_I_TEI, nl.Uint32Attr(pdp.ITEI)))
-//         req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_O_TEI, nl.Uint32Attr(pdp.OTEI)))
-//     default:
-//         return fmt.Errorf("unsupported GTP version: %d", pdp.Version)
-//     }
-//     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
+    // req.AddData(nl.NewRtAttr(L2TP_ATTR_IP_SADDR, []byte(localAddr.To4())))
+    // req.AddData(nl.NewRtAttr(L2TP_ATTR_IP_DADDR, []byte(remoteAddr.To4())))
+    // req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_SPORT, nl.Uint16Attr(5555)))
+    // req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_DPORT, nl.Uint16Attr(6666)))
 
+    _, err = req.Execute(unix.NETLINK_GENERIC, 0)
 
+    return 0, err
+}
+
+func L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
+    return pkgHandle.L2tpAddTunnel(tunnel)
+}

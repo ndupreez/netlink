@@ -86,11 +86,6 @@ type L2tpTunnel struct {
     Conn        *net.UDPConn    // Socket
 }
 
-// Context to hold L2TP related info across multiple sessions
-type L2tpContext struct {
-
-}
-
 
 //
 // 1. Utility functions:
@@ -185,8 +180,8 @@ func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     fmt.Printf("Conn is : %s (fd: %d) \n", tunnel.Conn, tunnel.Fd)
     req := h.newNetlinkRequest(int(L2tpGlNetlinkID), 0)
     req.AddData(msg)
-    req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(1000)))
-    req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_CONN_ID, nl.Uint32Attr(2000)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(tunnel.ID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_CONN_ID, nl.Uint32Attr(tunnel.PeerID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PROTO_VERSION, nl.Uint8Attr(L2TP_PROTO_VERSION)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_ENCAP_TYPE, nl.Uint16Attr(L2TP_ENCAPTYPE_UDP)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_FD, nl.Uint32Attr(tunnel.Fd)))
@@ -197,6 +192,7 @@ func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     // req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_DPORT, nl.Uint16Attr(6666)))
 
     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
+    fmt.Printf("Add tunnel err : %s\n", err)
 
     return 0, err
 }

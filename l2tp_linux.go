@@ -1,7 +1,7 @@
 package netlink
 
 import (
-    // "fmt"
+    "fmt"
     // "syscall"
     "errors"
     "net"
@@ -83,6 +83,14 @@ type L2tpContext struct {
     Version     uint8           // L2TP driver version
 }
 
+// Structure to hold all session details
+type L2tpSession struct {
+    UniqueIDs   bool
+    ID          uint32          // Local session ID
+    PeerID      uint32          // Peer session ID
+    IFName      string          // Session interface name
+}
+
 // Structure to hold all tunnel details
 type L2tpTunnel struct {
     ID          uint32          // Local tunnel ID
@@ -93,10 +101,11 @@ type L2tpTunnel struct {
     PeerAddr    string          // Peer IP address in format 'ipaddr:port'
     Fd          uint32          // [Optional] Local UDP socket file descriptor to use
     Conn        *net.UDPConn    // Socket
+    // Attached sessions
+    Session     *L2tpSession    // For now - support 1 session per tunnel
     // Context
     ctx         L2tpContext
 }
-
 
 //
 // 1. Utility functions:
@@ -237,6 +246,10 @@ func (h *Handle) L2tpDelTunnel(tunnel *L2tpTunnel) (uint32, error) {
         Command: L2TP_CMD_TUNNEL_DELETE,
         Version: tunnel.ctx.Version,
     }
+    // Is the session nil?
+    if (tunnel.Session != nil) {
+        L2tpDelSession(tunnel)
+    }
     // Fire request
     req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
     req.AddData(msg)
@@ -258,3 +271,93 @@ func (h *Handle) L2tpDelTunnel(tunnel *L2tpTunnel) (uint32, error) {
 func L2tpDelTunnel(tunnel *L2tpTunnel) (uint32, error) {
     return pkgHandle.L2tpDelTunnel(tunnel)
 }
+
+
+// Add a session to a tunnel
+func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint32, error) {
+    // Check context
+    err := setL2tpContext(tunnel)
+    if (err != nil) {
+        return 1000, err
+    }
+    msg := &nl.Genlmsg{
+        Command: L2TP_CMD_SESSION_CREATE,
+        Version: tunnel.ctx.Version,
+    }
+    if (tunnel.Session != nil) {
+        return 2000, errors.New("Tunnel already has session associated")
+    }
+    if (session.ID == 0) {
+        if (session.UniqueIDs) {
+            session.ID = tunnel.ID
+        } else {
+            session.ID = 1
+        }
+    }
+    if (session.PeerID == 0) {
+        if (session.UniqueIDs) {
+            session.PeerID = tunnel.PeerID
+        } else {
+            session.PeerID = 1
+        }
+    }
+    if (len(session.IFName) == 0) {
+        session.IFName = fmt.Sprintf("l2tpeth%d", session.ID)
+    }
+    // Fire request
+    req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
+    req.AddData(msg)
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(tunnel.ID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_PW_TYPE, nl.Uint16Attr(L2TP_PWTYPE_ETH)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_SESSION_ID, nl.Uint32Attr(session.ID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_SESSION_ID, nl.Uint32Attr(session.PeerID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_IFNAME, nl.ZeroTerminated(session.IFName)))
+
+    _, err = req.Execute(unix.NETLINK_GENERIC, 0)
+
+    // OK? Add it to our tunnel
+    if (err == nil) {
+        tunnel.Session = session
+    }
+
+    return 0, err
+}
+
+func L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint32, error) {
+    return pkgHandle.L2tpAddSession(tunnel, session)
+}
+
+// Remove a session
+func (h *Handle) L2tpDelSession(tunnel *L2tpTunnel) (uint32, error) {
+    // Check context
+    err := setL2tpContext(tunnel)
+    if (err != nil) {
+        return 1000, err
+    }
+    if (tunnel.Session == nil) {
+        return 2001, errors.New("Tunnel has no attached sessions")
+    }
+    msg := &nl.Genlmsg{
+        Command: L2TP_CMD_SESSION_DELETE,
+        Version: tunnel.ctx.Version,
+    }
+    // Fire request
+    req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
+    req.AddData(msg)
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(tunnel.ID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_SESSION_ID, nl.Uint32Attr(tunnel.Session.ID)))
+
+    _, err = req.Execute(unix.NETLINK_GENERIC, 0)
+
+    // Remove the session from tunnel
+    if (err == nil) {
+        tunnel.Session = nil
+    }
+
+    return 0, err
+}
+
+func L2tpDelSession(tunnel *L2tpTunnel) (uint32, error) {
+    return pkgHandle.L2tpDelSession(tunnel)
+}
+

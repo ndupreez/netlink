@@ -21,6 +21,7 @@ const (
     L2TP_ENCAPTYPE_UDP = 0
     L2TP_PWTYPE_ETH = 0x0005
     L2TP_PROTO_VERSION = 3
+    L2TP_DEFAULT_MTU = 1460
 )
 
 const (
@@ -89,6 +90,7 @@ type L2tpSession struct {
     ID          uint32          // Local session ID
     PeerID      uint32          // Peer session ID
     IFName      string          // Session interface name
+    MTU         uint16          // Interface MTU
 }
 
 // Structure to hold all tunnel details
@@ -155,6 +157,18 @@ func L2tpGetGenlDetails() (uint32, uint16, error) {
     return pkgHandle.L2tpGetGenlDetails()
 }
 
+// Check to see if we can talk to the L2TP netlink driver
+func L2tpIsAvailable() (bool, error) {
+    L2tpGlNetlinkVer, _, err := pkgHandle.L2tpGetGenlDetails()
+    if (err != nil) {
+        return false, err
+    }
+    if (L2tpGlNetlinkVer < 1) {
+        return false, errors.New("Unknown driver version")
+    }
+    return true, nil
+}
+
 
 //
 // 2. Context helpers
@@ -177,7 +191,7 @@ func setL2tpContext(tunnel *L2tpTunnel) (error) {
 
 
 //
-// 3. Tunnel related APIs
+// 3. Tunnel & Session related APIs
 //
 
 // Build a tunnel
@@ -304,6 +318,9 @@ func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint3
     if (len(session.IFName) == 0) {
         session.IFName = fmt.Sprintf("l2tpeth%d", session.ID)
     }
+    if (session.MTU == 0) {
+        session.MTU = L2TP_DEFAULT_MTU
+    }
     // Fire request
     req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
     req.AddData(msg)
@@ -312,6 +329,7 @@ func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint3
     req.AddData(nl.NewRtAttr(L2TP_ATTR_SESSION_ID, nl.Uint32Attr(session.ID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_SESSION_ID, nl.Uint32Attr(session.PeerID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_IFNAME, nl.ZeroTerminated(session.IFName)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_MTU, nl.Uint16Attr(session.MTU)))
 
     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
 
@@ -359,5 +377,35 @@ func (h *Handle) L2tpDelSession(tunnel *L2tpTunnel) (uint32, error) {
 
 func L2tpDelSession(tunnel *L2tpTunnel) (uint32, error) {
     return pkgHandle.L2tpDelSession(tunnel)
+}
+
+// Modify a session MTU
+func (h *Handle) L2tpSetSessionMtu(tunnel *L2tpTunnel, mtu uint16) (uint32, error) {
+    // Check context
+    err := setL2tpContext(tunnel)
+    if (err != nil) {
+        return 1000, err
+    }
+    msg := &nl.Genlmsg{
+        Command: L2TP_CMD_SESSION_MODIFY,
+        Version: tunnel.ctx.Version,
+    }
+    if (tunnel.Session == nil) {
+        return 2001, errors.New("No session associated with tunnel")
+    }
+    // Fire request
+    req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
+    req.AddData(msg)
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(tunnel.ID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_SESSION_ID, nl.Uint32Attr(tunnel.Session.ID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_MTU, nl.Uint16Attr(tunnel.Session.MTU)))
+
+    _, err = req.Execute(unix.NETLINK_GENERIC, 0)
+
+    return 0, err
+}
+
+func L2tpSetSessionMtu(tunnel *L2tpTunnel, mtu uint16) (uint32, error) {
+    return pkgHandle.L2tpSetSessionMtu(tunnel, mtu)
 }
 

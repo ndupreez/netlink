@@ -1,7 +1,7 @@
 package netlink
 
 import (
-    "fmt"
+    // "fmt"
     // "syscall"
     "errors"
     "net"
@@ -46,6 +46,7 @@ const (
     L2TP_ATTR_PEER_SESSION_ID   = 12
     L2TP_ATTR_COOKIE            = 15    /* 0, 4 or 8 bytes */
     L2TP_ATTR_PEER_COOKIE       = 16    /* 0, 4 or 8 bytes */
+    L2TP_ATTR_DEBUG             = 17
     L2TP_ATTR_FD                = 23
     L2TP_ATTR_IP_SADDR          = 24    /* u32 */
     L2TP_ATTR_IP_DADDR          = 25    /* u32 */
@@ -74,6 +75,14 @@ const (
     L2TP_SEQ_ALL    = 2
 )
 
+
+// Used to cache some details regarding the L2TP environment
+type L2tpContext struct {
+    IsSet       bool
+    ProtoID     uint16          // L2TP driver Genenric NL id
+    Version     uint8           // L2TP driver version
+}
+
 // Structure to hold all tunnel details
 type L2tpTunnel struct {
     ID          uint32          // Local tunnel ID
@@ -84,6 +93,8 @@ type L2tpTunnel struct {
     PeerAddr    string          // Peer IP address in format 'ipaddr:port'
     Fd          uint32          // [Optional] Local UDP socket file descriptor to use
     Conn        *net.UDPConn    // Socket
+    // Context
+    ctx         L2tpContext
 }
 
 
@@ -137,19 +148,39 @@ func L2tpGetGenlDetails() (uint32, uint16, error) {
 
 
 //
-// 2. Tunnel related APIs
+// 2. Context helpers
+//
+func setL2tpContext(tunnel *L2tpTunnel) (error) {
+    if (tunnel.ctx.IsSet) {
+        // Already loaded
+        return nil
+    }
+    L2tpGlNetlinkVer, L2tpGlNetlinkID, err := pkgHandle.L2tpGetGenlDetails()
+    if (err != nil) {
+        return err
+    }
+    tunnel.ctx.Version = uint8(L2tpGlNetlinkVer)
+    tunnel.ctx.ProtoID = L2tpGlNetlinkID
+    tunnel.ctx.IsSet = true
+
+    return nil
+}
+
+
+//
+// 3. Tunnel related APIs
 //
 
 // Build a tunnel
 func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
-    // HACK HACK
-    _, L2tpGlNetlinkID, err := pkgHandle.L2tpGetGenlDetails()
+    // Check context
+    err := setL2tpContext(tunnel)
     if (err != nil) {
         return 1000, err
     }
     msg := &nl.Genlmsg{
         Command: L2TP_CMD_TUNNEL_CREATE,
-        Version: 1,
+        Version: tunnel.ctx.Version,
     }
     var localAddr *net.UDPAddr
     var remoteAddr *net.UDPAddr
@@ -177,8 +208,8 @@ func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     }
     connFile, _ := tunnel.Conn.File()
     tunnel.Fd = (uint32)(connFile.Fd())
-    fmt.Printf("Conn is : %s (fd: %d) \n", tunnel.Conn, tunnel.Fd)
-    req := h.newNetlinkRequest(int(L2tpGlNetlinkID), 0)
+    // Fire request
+    req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
     req.AddData(msg)
     req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(tunnel.ID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_CONN_ID, nl.Uint32Attr(tunnel.PeerID)))
@@ -186,17 +217,44 @@ func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     req.AddData(nl.NewRtAttr(L2TP_ATTR_ENCAP_TYPE, nl.Uint16Attr(L2TP_ENCAPTYPE_UDP)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_FD, nl.Uint32Attr(tunnel.Fd)))
 
-    // req.AddData(nl.NewRtAttr(L2TP_ATTR_IP_SADDR, []byte(localAddr.To4())))
-    // req.AddData(nl.NewRtAttr(L2TP_ATTR_IP_DADDR, []byte(remoteAddr.To4())))
-    // req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_SPORT, nl.Uint16Attr(5555)))
-    // req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_DPORT, nl.Uint16Attr(6666)))
-
     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
-    fmt.Printf("Add tunnel err : %s\n", err)
 
     return 0, err
 }
 
 func L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     return pkgHandle.L2tpAddTunnel(tunnel)
+}
+
+// Remove a tunnel
+func (h *Handle) L2tpDelTunnel(tunnel *L2tpTunnel) (uint32, error) {
+    // Check context
+    err := setL2tpContext(tunnel)
+    if (err != nil) {
+        return 1000, err
+    }
+    msg := &nl.Genlmsg{
+        Command: L2TP_CMD_TUNNEL_DELETE,
+        Version: tunnel.ctx.Version,
+    }
+    // Fire request
+    req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
+    req.AddData(msg)
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(tunnel.ID)))
+
+    _, err = req.Execute(unix.NETLINK_GENERIC, 0)
+
+    // Remove the socket
+    if (err == nil) {
+        if (tunnel.Conn != nil) {
+            tunnel.Conn.Close()
+            tunnel.Conn = nil
+        }
+    }
+
+    return 0, err
+}
+
+func L2tpDelTunnel(tunnel *L2tpTunnel) (uint32, error) {
+    return pkgHandle.L2tpDelTunnel(tunnel)
 }

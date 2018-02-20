@@ -17,22 +17,22 @@ import (
 // Nick du Preez
 // --------------------------------------------------------------------------------
 const (
-    L2TP_GENL_NAME = "l2tp"
-    L2TP_ENCAPTYPE_UDP = 0
-    L2TP_PWTYPE_ETH = 0x0005
-    L2TP_PROTO_VERSION = 3
-    L2TP_DEFAULT_MTU = 1460
+    L2TP_GENL_NAME      = "l2tp"
+    L2TP_ENCAPTYPE_UDP  = 0
+    L2TP_PWTYPE_ETH     = 0x0005
+    L2TP_PROTO_VERSION  = 3
+    L2TP_DEFAULT_MTU    = 1460
 )
 
 const (
-    L2TP_CMD_TUNNEL_CREATE  = 1
-    L2TP_CMD_TUNNEL_DELETE  = 2
-    L2TP_CMD_TUNNEL_MODIFY  = 3
-    L2TP_CMD_TUNNEL_GET     = 4
-    L2TP_CMD_SESSION_CREATE = 5
-    L2TP_CMD_SESSION_DELETE = 6
-    L2TP_CMD_SESSION_MODIFY = 7
-    L2TP_CMD_SESSION_GET    = 8
+    L2TP_CMD_TUNNEL_CREATE      = 1
+    L2TP_CMD_TUNNEL_DELETE      = 2
+    L2TP_CMD_TUNNEL_MODIFY      = 3
+    L2TP_CMD_TUNNEL_GET         = 4
+    L2TP_CMD_SESSION_CREATE     = 5
+    L2TP_CMD_SESSION_DELETE     = 6
+    L2TP_CMD_SESSION_MODIFY     = 7
+    L2TP_CMD_SESSION_GET        = 8
 )
 
 const (
@@ -173,6 +173,10 @@ func L2tpIsAvailable() (bool, error) {
 //
 // 2. Context helpers
 //
+
+// The APIs use a 'created-on-demand' context struct to keep track of information
+// accross invokes, mainly to reduce the overhead of subsequent calls to the driver,
+// like driver GeNL ID, version, etc.
 func setL2tpContext(tunnel *L2tpTunnel) (error) {
     if (tunnel.ctx.IsSet) {
         // Already loaded
@@ -194,7 +198,10 @@ func setL2tpContext(tunnel *L2tpTunnel) (error) {
 // 3. Tunnel & Session related APIs
 //
 
-// Build a tunnel
+//
+// Build or add a tunnel using a user space UDP socket for the L2TP driver to
+// convert into a L2TP version
+//
 func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     // Check context
     err := setL2tpContext(tunnel)
@@ -249,7 +256,9 @@ func L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     return pkgHandle.L2tpAddTunnel(tunnel)
 }
 
-// Remove a tunnel
+//
+// Remove a tunnel and in the process remove all associated sessions.
+//
 func (h *Handle) L2tpDelTunnel(tunnel *L2tpTunnel) (uint32, error) {
     // Check context
     err := setL2tpContext(tunnel)
@@ -286,8 +295,9 @@ func L2tpDelTunnel(tunnel *L2tpTunnel) (uint32, error) {
     return pkgHandle.L2tpDelTunnel(tunnel)
 }
 
-
-// Add a session to a tunnel
+//
+// Add a session to a tunnel (current version supports 1 session per tunnel)
+//
 func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint32, error) {
     // Check context
     err := setL2tpContext(tunnel)
@@ -345,7 +355,10 @@ func L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint32, error) {
     return pkgHandle.L2tpAddSession(tunnel, session)
 }
 
-// Remove a session
+//
+// Remove a session from a tunnel. Current version assumes 1 session per
+// tunnel
+//
 func (h *Handle) L2tpDelSession(tunnel *L2tpTunnel) (uint32, error) {
     // Check context
     err := setL2tpContext(tunnel)
@@ -379,7 +392,9 @@ func L2tpDelSession(tunnel *L2tpTunnel) (uint32, error) {
     return pkgHandle.L2tpDelSession(tunnel)
 }
 
+//
 // Modify a session MTU
+//
 func (h *Handle) L2tpSetSessionMtu(tunnel *L2tpTunnel, mtu uint16) (uint32, error) {
     // Check context
     err := setL2tpContext(tunnel)

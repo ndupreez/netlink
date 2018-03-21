@@ -234,7 +234,7 @@ func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint3
         }
     }
     if (len(session.IFName) == 0) {
-        session.IFName = fmt.Sprintf("l2tpeth%d", session.ID)
+        session.IFName = fmt.Sprintf("l2tpeth%d", tunnel.ID)
     }
     if (session.MTU == 0) {
         session.MTU = L2TP_DEFAULT_MTU

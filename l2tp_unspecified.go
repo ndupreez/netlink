@@ -2,12 +2,6 @@
 
 package netlink
 
-type L2tpSession struct {
-}
-
-type L2tpTunnel struct {
-}
-
 func (h *Handle) L2tpGetGenlVersion() (uint32, error) {
     return 0, ErrNotImplemented
 }

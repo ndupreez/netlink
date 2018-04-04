@@ -14,6 +14,10 @@ func L2tpIsAvailable() (bool, error) {
     return false, ErrNotImplemented
 }
 
+func L2tpAddTunnelForConn(tunnel *L2tpTunnel) (uint32, error) {
+    return 0, ErrNotImplemented
+}
+
 func L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     return 0, ErrNotImplemented
 }

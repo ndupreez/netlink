@@ -50,6 +50,8 @@ const (
     L2TP_ATTR_UDP_DPORT         = 27    /* u16 */
     L2TP_ATTR_MTU               = 28
     L2TP_ATTR_STATS             = 30    /* nested */
+    L2TP_ATTR_IP6_SADDR         = 31    /* struct in6_addr */
+    L2TP_ATTR_IP6_DADDR         = 32    /* struct in6_addr */
 )
 
 const (

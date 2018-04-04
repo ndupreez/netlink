@@ -5,6 +5,8 @@ import (
     // "syscall"
     "errors"
     "net"
+    "strconv"
+    "strings"
     "github.com/ndupreez/netlink/nl"
     "golang.org/x/sys/unix"
 )
@@ -77,6 +79,34 @@ func L2tpIsAvailable() (bool, error) {
     return true, nil
 }
 
+// Extract port for address
+func GetPortFromAddr(addr string) uint16 {
+    var portInt uint16
+    portInt = 0
+    _, port, err := net.SplitHostPort(addr)
+    if (err == nil) {
+        tempPort, errConv := strconv.ParseUint(port, 10, 16)
+        if (errConv == nil) {
+            portInt = (uint16)(tempPort)
+        }
+    }
+    return (portInt)
+}
+
+// Extract host part from address
+func GetHostFromAddr(addr string) string {
+    host, _, err := net.SplitHostPort(addr)
+    if (err == nil) {
+        return (host)
+    }
+    return ("")
+}
+
+func IsIPv6(str string) bool {
+  ip := net.ParseIP(str)
+  return ip != nil && strings.Contains(str, ":")
+}
+
 
 //
 // 2. Context helpers
@@ -110,7 +140,12 @@ func setL2tpContext(tunnel *L2tpTunnel) (error) {
 // Build or add a tunnel using a user space UDP socket for the L2TP driver to
 // convert into a L2TP version
 //
-func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
+func (h *Handle) L2tpAddTunnelForConn(tunnel *L2tpTunnel) (uint32, error) {
+    //
+    // NOTE:
+    // Work in Progress!
+    //
+
     // Check context
     err := setL2tpContext(tunnel)
     if (err != nil) {
@@ -160,6 +195,67 @@ func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     return 0, err
 }
 
+func L2tpAddTunnelForConn(tunnel *L2tpTunnel) (uint32, error) {
+    return pkgHandle.L2tpAddTunnelForConn(tunnel)
+}
+
+
+//
+// Build or add a tunnel using the 2 endpoints (addresses & ports)
+//
+func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
+    // Check context
+    err := setL2tpContext(tunnel)
+    if (err != nil) {
+        return 1000, err
+    }
+    msg := &nl.Genlmsg{
+        Command: L2TP_CMD_TUNNEL_CREATE,
+        Version: tunnel.ctx.Version,
+    }
+    var addrErr error
+    // Resolve the 2 endpoint addresses
+    if (len(tunnel.LocalAddr) != 0) {
+        _, addrErr = net.ResolveUDPAddr("udp", tunnel.LocalAddr)
+        if (addrErr != nil) {
+            return 1001, addrErr
+        }
+    }
+    if (len(tunnel.PeerAddr) != 0) {
+        _, addrErr = net.ResolveUDPAddr("udp", tunnel.PeerAddr)
+        if (addrErr != nil) {
+            return 1002, addrErr
+        }
+    } else {
+        return 1003, errors.New("Peer address not found")
+    }
+    // Fire request
+    req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
+    req.AddData(msg)
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(tunnel.ID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_CONN_ID, nl.Uint32Attr(tunnel.PeerID)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_PROTO_VERSION, nl.Uint8Attr(L2TP_PROTO_VERSION)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_ENCAP_TYPE, nl.Uint16Attr(L2TP_ENCAPTYPE_UDP)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_SPORT, nl.Uint16Attr(GetPortFromAddr(tunnel.LocalAddr))))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_DPORT, nl.Uint16Attr(GetPortFromAddr(tunnel.PeerAddr))))
+    // IPv4 or v6?
+    localHost := GetHostFromAddr(tunnel.LocalAddr)
+    peerHost  := GetHostFromAddr(tunnel.PeerAddr)
+    localIP := net.ParseIP(localHost)
+    peerIP  := net.ParseIP(peerHost)
+    if (IsIPv6(localHost)) {
+        req.AddData(nl.NewRtAttr(L2TP_ATTR_IP6_SADDR, localIP.To16()))
+        req.AddData(nl.NewRtAttr(L2TP_ATTR_IP6_DADDR, peerIP.To16()))
+    } else {
+        req.AddData(nl.NewRtAttr(L2TP_ATTR_IP_SADDR, localIP.To4()))
+        req.AddData(nl.NewRtAttr(L2TP_ATTR_IP_DADDR, peerIP.To4()))
+    }
+
+    _, err = req.Execute(unix.NETLINK_GENERIC, 0)
+
+    return 0, err
+}
+
 func L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     return pkgHandle.L2tpAddTunnel(tunnel)
 }
@@ -188,7 +284,7 @@ func (h *Handle) L2tpDelTunnel(tunnel *L2tpTunnel) (uint32, error) {
 
     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
 
-    // Remove the socket
+    // Close socket - if open
     if (err == nil) {
         if (tunnel.Conn != nil) {
             tunnel.Conn.Close()

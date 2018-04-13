@@ -95,6 +95,9 @@ func GetPortFromAddr(addr string) uint16 {
 
 // Extract host part from address
 func GetHostFromAddr(addr string) string {
+    if (!strings.Contains(addr, ":")) {
+        return (addr)
+    }
     host, _, err := net.SplitHostPort(addr)
     if (err == nil) {
         return (host)

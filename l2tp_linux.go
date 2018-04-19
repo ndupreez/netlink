@@ -347,6 +347,12 @@ func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint3
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_SESSION_ID, nl.Uint32Attr(session.PeerID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_IFNAME, nl.ZeroTerminated(session.IFName)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_MTU, nl.Uint16Attr(session.MTU)))
+    if (len(session.Cookie) > 0) {
+        req.AddData(nl.NewRtAttr(L2TP_ATTR_COOKIE, session.Cookie))
+    }
+    if (len(session.PeerCookie) > 0) {
+        req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_COOKIE, session.PeerCookie))
+    }
 
     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
 

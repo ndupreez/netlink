@@ -86,6 +86,8 @@ type L2tpSession struct {
     UniqueIDs   bool
     ID          uint32          // Local session ID
     PeerID      uint32          // Peer session ID
+    Cookie      []byte          // HEX String - Tunnel cookie (max 8 bytes)
+    PeerCookie  []byte          // HEX String - Tunnel cookie for peer (max 8 bytes)
     IFName      string          // Session interface name
     MTU         uint16          // Interface MTU
 }
@@ -95,7 +97,6 @@ type L2tpTunnel struct {
     ID          uint32          // Local tunnel ID
     PeerID      uint32          // Peer tunnel ID
     Name        string          // Tunnel endpoint name
-    Cookie      string          // Tunnel cookie
     LocalAddr   string          // Local IP address in format 'ipaddr:port'
     PeerAddr    string          // Peer IP address in format 'ipaddr:port'
     Fd          uint32          // [Optional] Local UDP socket file descriptor to use

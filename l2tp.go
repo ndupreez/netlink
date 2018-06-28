@@ -34,6 +34,8 @@ const (
     L2TP_ATTR_NONE              = 0
     L2TP_ATTR_PW_TYPE           = 1
     L2TP_ATTR_ENCAP_TYPE        = 2
+    L2TP_ATTR_L2SPEC_TYPE       = 5
+    L2TP_ATTR_L2SPEC_LEN        = 6
     L2TP_ATTR_PROTO_VERSION     = 7
     L2TP_ATTR_IFNAME            = 8
     L2TP_ATTR_CONN_ID           = 9
@@ -73,6 +75,11 @@ const (
     L2TP_SEQ_ALL                = 2
 )
 
+const (
+    L2TP_L2SPECTYPE_NONE        = 0     /* len = 0 */
+    L2TP_L2SPECTYPE_DEFAULT     = 1     /* len = 4 */
+)
+
 // See L2tpTunnel & L2tpSession debugflags
 const (
     L2TP_MSG_DEBUG              = (1 << 0)
@@ -98,6 +105,8 @@ type L2tpSession struct {
     PeerCookie  []byte          // HEX String - Tunnel cookie for peer (max 8 bytes)
     IFName      string          // Session interface name
     MTU         uint16          // Interface MTU
+    L2SpecType  uint8           // L2TP_ATTR_L2SPEC_TYPE
+    L2SpecLen   uint8           // L2TP_ATTR_L2SPEC_LEN
     DebugFlags  uint32          // Driver debug settings (bitmask)
 }
 

@@ -345,6 +345,8 @@ func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint3
     req.AddData(msg)
     req.AddData(nl.NewRtAttr(L2TP_ATTR_CONN_ID, nl.Uint32Attr(tunnel.ID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PW_TYPE, nl.Uint16Attr(L2TP_PWTYPE_ETH)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_L2SPEC_TYPE, nl.Uint8Attr(session.L2SpecType)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_L2SPEC_LEN, nl.Uint8Attr(session.L2SpecLen)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_SESSION_ID, nl.Uint32Attr(session.ID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_SESSION_ID, nl.Uint32Attr(session.PeerID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_IFNAME, nl.ZeroTerminated(session.IFName)))

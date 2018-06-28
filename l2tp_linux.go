@@ -191,6 +191,7 @@ func (h *Handle) L2tpAddTunnelForConn(tunnel *L2tpTunnel) (uint32, error) {
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_CONN_ID, nl.Uint32Attr(tunnel.PeerID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PROTO_VERSION, nl.Uint8Attr(L2TP_PROTO_VERSION)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_ENCAP_TYPE, nl.Uint16Attr(L2TP_ENCAPTYPE_UDP)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_DEBUG, nl.Uint32Attr(tunnel.DebugFlags)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_FD, nl.Uint32Attr(tunnel.Fd)))
 
     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
@@ -239,6 +240,7 @@ func (h *Handle) L2tpAddTunnel(tunnel *L2tpTunnel) (uint32, error) {
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_CONN_ID, nl.Uint32Attr(tunnel.PeerID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PROTO_VERSION, nl.Uint8Attr(L2TP_PROTO_VERSION)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_ENCAP_TYPE, nl.Uint16Attr(L2TP_ENCAPTYPE_UDP)))
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_DEBUG, nl.Uint32Attr(tunnel.DebugFlags)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_SPORT, nl.Uint16Attr(GetPortFromAddr(tunnel.LocalAddr))))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_UDP_DPORT, nl.Uint16Attr(GetPortFromAddr(tunnel.PeerAddr))))
     // IPv4 or v6?
@@ -353,6 +355,7 @@ func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint3
     if (len(session.PeerCookie) > 0) {
         req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_COOKIE, session.PeerCookie))
     }
+    req.AddData(nl.NewRtAttr(L2TP_ATTR_DEBUG, nl.Uint32Attr(session.DebugFlags)))
 
     _, err = req.Execute(unix.NETLINK_GENERIC, 0)
 

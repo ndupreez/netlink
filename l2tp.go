@@ -68,9 +68,17 @@ const (
 )
 
 const (
-    L2TP_SEQ_NONE   = 0
-    L2TP_SEQ_IP     = 1
-    L2TP_SEQ_ALL    = 2
+    L2TP_SEQ_NONE               = 0
+    L2TP_SEQ_IP                 = 1
+    L2TP_SEQ_ALL                = 2
+)
+
+// See L2tpTunnel & L2tpSession debugflags
+const (
+    L2TP_MSG_DEBUG              = (1 << 0)
+    L2TP_MSG_CONTROL            = (1 << 1)
+    L2TP_MSG_SEQ                = (1 << 2)
+    L2TP_MSG_DATA               = (1 << 3)
 )
 
 
@@ -90,6 +98,7 @@ type L2tpSession struct {
     PeerCookie  []byte          // HEX String - Tunnel cookie for peer (max 8 bytes)
     IFName      string          // Session interface name
     MTU         uint16          // Interface MTU
+    DebugFlags  uint32          // Driver debug settings (bitmask)
 }
 
 // Structure to hold all tunnel details
@@ -101,6 +110,7 @@ type L2tpTunnel struct {
     PeerAddr    string          // Peer IP address in format 'ipaddr:port'
     Fd          uint32          // [Optional] Local UDP socket file descriptor to use
     Conn        *net.UDPConn    // Socket
+    DebugFlags  uint32          // Driver debug settings (bitmask)
     // Attached sessions
     Session     *L2tpSession    // For now - support 1 session per tunnel
     // Context

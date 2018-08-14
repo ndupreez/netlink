@@ -1482,6 +1482,13 @@ func TestLinkAddDelVti(t *testing.T) {
 		OKey:      0x101,
 		Local:     net.IPv4(127, 0, 0, 1),
 		Remote:    net.IPv4(127, 0, 0, 1)})
+
+	testLinkAddDel(t, &Vti{
+		LinkAttrs: LinkAttrs{Name: "vtibar"},
+		IKey:      0x101,
+		OKey:      0x101,
+		Local:     net.IPv6loopback,
+		Remote:    net.IPv6loopback})
 }
 
 func TestBridgeCreationWithMulticastSnooping(t *testing.T) {
@@ -1604,6 +1611,52 @@ func TestBridgeCreationWithHelloTime(t *testing.T) {
 		t.Fatalf("expected %d got %d", 200, actualHelloTime)
 	}
 	if err := LinkDel(bridgeWithDefaultHelloTime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBridgeCreationWithVlanFiltering(t *testing.T) {
+	minKernelRequired(t, 3, 18)
+
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	bridgeWithVlanFilteringEnabledName := "foo"
+	vlanFiltering := true
+	bridgeWithVlanFilteringEnabled := &Bridge{LinkAttrs: LinkAttrs{Name: bridgeWithVlanFilteringEnabledName}, VlanFiltering: &vlanFiltering}
+	if err := LinkAdd(bridgeWithVlanFilteringEnabled); err != nil {
+		t.Fatal(err)
+	}
+
+	retrievedBridge, err := LinkByName(bridgeWithVlanFilteringEnabledName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retrievedVlanFilteringState := *retrievedBridge.(*Bridge).VlanFiltering
+	if retrievedVlanFilteringState != vlanFiltering {
+		t.Fatalf("expected %t got %t", vlanFiltering, retrievedVlanFilteringState)
+	}
+	if err := LinkDel(bridgeWithVlanFilteringEnabled); err != nil {
+		t.Fatal(err)
+	}
+
+	bridgeWithDefaultVlanFilteringName := "bar"
+	bridgeWIthDefaultVlanFiltering := &Bridge{LinkAttrs: LinkAttrs{Name: bridgeWithDefaultVlanFilteringName}}
+	if err := LinkAdd(bridgeWIthDefaultVlanFiltering); err != nil {
+		t.Fatal(err)
+	}
+
+	retrievedBridge, err = LinkByName(bridgeWithDefaultVlanFilteringName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retrievedVlanFilteringState = *retrievedBridge.(*Bridge).VlanFiltering
+	if retrievedVlanFilteringState != false {
+		t.Fatalf("expected %t got %t", false, retrievedVlanFilteringState)
+	}
+	if err := LinkDel(bridgeWIthDefaultVlanFiltering); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -337,9 +337,6 @@ func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint3
     if (len(session.IFName) == 0) {
         session.IFName = fmt.Sprintf("l2tpeth%d", tunnel.ID)
     }
-    if (session.MTU == 0) {
-        session.MTU = L2TP_DEFAULT_MTU
-    }
     // Fire request
     req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
     req.AddData(msg)
@@ -350,7 +347,9 @@ func (h *Handle) L2tpAddSession(tunnel *L2tpTunnel, session *L2tpSession) (uint3
     req.AddData(nl.NewRtAttr(L2TP_ATTR_SESSION_ID, nl.Uint32Attr(session.ID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_PEER_SESSION_ID, nl.Uint32Attr(session.PeerID)))
     req.AddData(nl.NewRtAttr(L2TP_ATTR_IFNAME, nl.ZeroTerminated(session.IFName)))
-    req.AddData(nl.NewRtAttr(L2TP_ATTR_MTU, nl.Uint16Attr(session.MTU)))
+    if (session.MTU > 0) {
+        req.AddData(nl.NewRtAttr(L2TP_ATTR_MTU, nl.Uint16Attr(session.MTU)))
+    }
     if (len(session.Cookie) > 0) {
         req.AddData(nl.NewRtAttr(L2TP_ATTR_COOKIE, session.Cookie))
     }
@@ -426,6 +425,7 @@ func (h *Handle) L2tpSetSessionMtu(tunnel *L2tpTunnel, mtu uint16) (uint32, erro
     if (tunnel.Session == nil) {
         return 2001, errors.New("No session associated with tunnel")
     }
+    tunnel.Session.MTU = mtu
     // Fire request
     req := h.newNetlinkRequest(int(tunnel.ctx.ProtoID), unix.NLM_F_ACK)
     req.AddData(msg)

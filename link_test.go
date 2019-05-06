@@ -201,6 +201,14 @@ func testLinkAddDel(t *testing.T, link Link) {
 		compareGretun(t, gretun, other)
 	}
 
+	if xfrmi, ok := link.(*Xfrmi); ok {
+		other, ok := result.(*Xfrmi)
+		if !ok {
+			t.Fatal("Result of create is not a xfrmi")
+		}
+		compareXfrmi(t, xfrmi, other)
+	}
+
 	if err = LinkDel(link); err != nil {
 		t.Fatal(err)
 	}
@@ -409,6 +417,12 @@ func compareVxlan(t *testing.T, expected, actual *Vxlan) {
 	}
 }
 
+func compareXfrmi(t *testing.T, expected, actual *Xfrmi) {
+	if expected.Ifid != actual.Ifid {
+		t.Fatal("Xfrmi.Ifid doesn't match")
+	}
+}
+
 func TestLinkAddDelWithIndex(t *testing.T) {
 	tearDown := setUpNetlinkTest(t)
 	defer tearDown()
@@ -509,7 +523,7 @@ func TestLinkAddDelVlan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	testLinkAddDel(t, &Vlan{LinkAttrs{Name: "bar", ParentIndex: parent.Attrs().Index}, 900})
+	testLinkAddDel(t, &Vlan{LinkAttrs{Name: "bar", ParentIndex: parent.Attrs().Index}, 900, VLAN_PROTOCOL_8021Q})
 
 	if err := LinkDel(parent); err != nil {
 		t.Fatal(err)
@@ -677,6 +691,36 @@ func TestLinkAddVethWithZeroTxQLen(t *testing.T) {
 		if veth.TxQLen != 0 {
 			t.Fatalf("TxQLen is %d, should be %d", veth.TxQLen, 0)
 		}
+	}
+}
+
+func TestLinkAddDelDummyWithGSO(t *testing.T) {
+	const (
+		gsoMaxSegs = 16
+		gsoMaxSize = 1 << 14
+	)
+	minKernelRequired(t, 4, 16)
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	dummy := &Dummy{LinkAttrs: LinkAttrs{Name: "foo", GSOMaxSize: gsoMaxSize, GSOMaxSegs: gsoMaxSegs}}
+	if err := LinkAdd(dummy); err != nil {
+		t.Fatal(err)
+	}
+	link, err := LinkByName("foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dummy, ok := link.(*Dummy)
+	if !ok {
+		t.Fatalf("unexpected link type: %T", link)
+	}
+
+	if dummy.GSOMaxSize != gsoMaxSize {
+		t.Fatalf("GSOMaxSize is %d, should be %d", dummy.GSOMaxSize, gsoMaxSize)
+	}
+	if dummy.GSOMaxSegs != gsoMaxSegs {
+		t.Fatalf("GSOMaxSeg is %d, should be %d", dummy.GSOMaxSegs, gsoMaxSegs)
 	}
 }
 
@@ -1087,7 +1131,7 @@ func TestLinkSet(t *testing.T) {
 	}
 
 	if link.Attrs().MTU != 1400 {
-		t.Fatal("MTU not changed!")
+		t.Fatal("MTU not changed")
 	}
 
 	err = LinkSetTxQLen(link, 500)
@@ -1101,7 +1145,7 @@ func TestLinkSet(t *testing.T) {
 	}
 
 	if link.Attrs().TxQLen != 500 {
-		t.Fatal("txqlen not changed!")
+		t.Fatal("txqlen not changed")
 	}
 
 	addr, err := net.ParseMAC("00:12:34:56:78:AB")
@@ -1120,7 +1164,7 @@ func TestLinkSet(t *testing.T) {
 	}
 
 	if !bytes.Equal(link.Attrs().HardwareAddr, addr) {
-		t.Fatalf("hardware address not changed!")
+		t.Fatalf("hardware address not changed")
 	}
 
 	err = LinkSetAlias(link, "barAlias")
@@ -1134,7 +1178,7 @@ func TestLinkSet(t *testing.T) {
 	}
 
 	if link.Attrs().Alias != "barAlias" {
-		t.Fatalf("alias not changed!")
+		t.Fatalf("alias not changed")
 	}
 
 	link, err = LinkByAlias("barAlias")
@@ -1168,7 +1212,7 @@ func TestLinkSetARP(t *testing.T) {
 	}
 
 	if link.Attrs().RawFlags&unix.IFF_NOARP != uint32(unix.IFF_NOARP) {
-		t.Fatalf("NOARP was not set!")
+		t.Fatalf("NOARP was not set")
 	}
 
 	err = LinkSetARPOn(link)
@@ -1182,7 +1226,7 @@ func TestLinkSetARP(t *testing.T) {
 	}
 
 	if link.Attrs().RawFlags&unix.IFF_NOARP != 0 {
-		t.Fatalf("NOARP is still set!")
+		t.Fatalf("NOARP is still set")
 	}
 }
 
@@ -1746,6 +1790,27 @@ func TestLinkAddDelGTP(t *testing.T) {
 	testLinkAddDel(t, gtp)
 }
 
+func TestLinkAddDelXfrmi(t *testing.T) {
+	minKernelRequired(t, 4, 19)
+	defer setUpNetlinkTest(t)()
+
+	lo, _ := LinkByName("lo")
+
+	testLinkAddDel(t, &Xfrmi{
+		LinkAttrs: LinkAttrs{Name: "xfrm123", ParentIndex: lo.Attrs().Index},
+		Ifid:      123})
+}
+
+func TestLinkAddDelXfrmiNoId(t *testing.T) {
+	minKernelRequired(t, 4, 19)
+	defer setUpNetlinkTest(t)()
+
+	lo, _ := LinkByName("lo")
+
+	testLinkAddDel(t, &Xfrmi{
+		LinkAttrs: LinkAttrs{Name: "xfrm0", ParentIndex: lo.Attrs().Index}})
+}
+
 func TestLinkByNameWhenLinkIsNotFound(t *testing.T) {
 	_, err := LinkByName("iammissing")
 	if err == nil {
@@ -1958,7 +2023,7 @@ func TestLinkSetAllmulticast(t *testing.T) {
 	}
 
 	if link.Attrs().RawFlags&unix.IFF_ALLMULTI != uint32(unix.IFF_ALLMULTI) {
-		t.Fatal("IFF_ALLMULTI was not set!")
+		t.Fatal("IFF_ALLMULTI was not set")
 	}
 
 	if err := LinkSetAllmulticastOff(link); err != nil {
@@ -1971,7 +2036,7 @@ func TestLinkSetAllmulticast(t *testing.T) {
 	}
 
 	if link.Attrs().RawFlags&unix.IFF_ALLMULTI != 0 {
-		t.Fatal("IFF_ALLMULTI is still set!")
+		t.Fatal("IFF_ALLMULTI is still set")
 	}
 
 	rawFlagsEnd := link.Attrs().RawFlags

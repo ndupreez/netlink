@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"net"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 
@@ -17,8 +18,8 @@ import (
 const (
 	testTxQLen    int = 100
 	defaultTxQLen int = 1000
-	testTxQueues  int = 1
-	testRxQueues  int = 1
+	testTxQueues  int = 4
+	testRxQueues  int = 8
 )
 
 func testLinkAddDel(t *testing.T, link Link) {
@@ -46,6 +47,12 @@ func testLinkAddDel(t *testing.T, link Link) {
 		}
 	}
 
+	if base.Group > 0 {
+		if base.Group != rBase.Group {
+			t.Fatalf("group is %d, should be %d", rBase.Group, base.Group)
+		}
+	}
+
 	if vlan, ok := link.(*Vlan); ok {
 		other, ok := result.(*Vlan)
 		if !ok {
@@ -60,6 +67,15 @@ func testLinkAddDel(t *testing.T, link Link) {
 		if rBase.TxQLen != base.TxQLen {
 			t.Fatalf("qlen is %d, should be %d", rBase.TxQLen, base.TxQLen)
 		}
+
+		if rBase.NumTxQueues != base.NumTxQueues {
+			t.Fatalf("txQueues is %d, should be %d", rBase.NumTxQueues, base.NumTxQueues)
+		}
+
+		if rBase.NumRxQueues != base.NumRxQueues {
+			t.Fatalf("rxQueues is %d, should be %d", rBase.NumRxQueues, base.NumRxQueues)
+		}
+
 		if rBase.MTU != base.MTU {
 			t.Fatalf("MTU is %d, should be %d", rBase.MTU, base.MTU)
 		}
@@ -76,6 +92,9 @@ func testLinkAddDel(t *testing.T, link Link) {
 				}
 				if peer.TxQLen != testTxQLen {
 					t.Fatalf("TxQLen of peer is %d, should be %d", peer.TxQLen, testTxQLen)
+				}
+				if !bytes.Equal(peer.Attrs().HardwareAddr, original.PeerHardwareAddr) {
+					t.Fatalf("Peer MAC addr is %s, should be %s", peer.Attrs().HardwareAddr, original.PeerHardwareAddr)
 				}
 			}
 		}
@@ -107,6 +126,9 @@ func testLinkAddDel(t *testing.T, link Link) {
 		}
 		if ipv.Mode != other.Mode {
 			t.Fatalf("Got unexpected mode: %d, expected: %d", other.Mode, ipv.Mode)
+		}
+		if ipv.Flag != other.Flag {
+			t.Fatalf("Got unexpected flag: %d, expected: %d", other.Flag, ipv.Flag)
 		}
 	}
 
@@ -145,6 +167,24 @@ func testLinkAddDel(t *testing.T, link Link) {
 		if bond.Mode != other.Mode {
 			t.Fatalf("Got unexpected mode: %d, expected: %d", other.Mode, bond.Mode)
 		}
+		if bond.ArpIpTargets != nil {
+			if other.ArpIpTargets == nil {
+				t.Fatalf("Got unexpected ArpIpTargets: nil")
+			}
+
+			if len(bond.ArpIpTargets) != len(other.ArpIpTargets) {
+				t.Fatalf("Got unexpected ArpIpTargets len: %d, expected: %d",
+					len(other.ArpIpTargets), len(bond.ArpIpTargets))
+			}
+
+			for i := range bond.ArpIpTargets {
+				if !bond.ArpIpTargets[i].Equal(other.ArpIpTargets[i]) {
+					t.Fatalf("Got unexpected ArpIpTargets: %s, expected: %s",
+						other.ArpIpTargets[i], bond.ArpIpTargets[i])
+				}
+			}
+		}
+
 		// Mode specific checks
 		if os.Getenv("TRAVIS_BUILD_DIR") != "" {
 			t.Log("Kernel in travis is too old for this check")
@@ -178,6 +218,13 @@ func testLinkAddDel(t *testing.T, link Link) {
 		}
 	}
 
+	if _, ok := link.(*Ip6tnl); ok {
+		_, ok := result.(*Ip6tnl)
+		if !ok {
+			t.Fatal("Result of create is not a ip6tnl")
+		}
+	}
+
 	if _, ok := link.(*Sittun); ok {
 		_, ok := result.(*Sittun)
 		if !ok {
@@ -207,6 +254,14 @@ func testLinkAddDel(t *testing.T, link Link) {
 			t.Fatal("Result of create is not a xfrmi")
 		}
 		compareXfrmi(t, xfrmi, other)
+	}
+
+	if tuntap, ok := link.(*Tuntap); ok {
+		other, ok := result.(*Tuntap)
+		if !ok {
+			t.Fatal("Result of create is not a tuntap")
+		}
+		compareTuntap(t, tuntap, other)
 	}
 
 	if err = LinkDel(link); err != nil {
@@ -423,6 +478,24 @@ func compareXfrmi(t *testing.T, expected, actual *Xfrmi) {
 	}
 }
 
+func compareTuntap(t *testing.T, expected, actual *Tuntap) {
+	if expected.Mode != actual.Mode {
+		t.Fatalf("Tuntap.Mode doesn't match: expected : %+v, got %+v", expected.Mode, actual.Mode)
+	}
+
+	if expected.Owner != actual.Owner {
+		t.Fatal("Tuntap.Owner doesn't match")
+	}
+
+	if expected.Group != actual.Group {
+		t.Fatal("Tuntap.Group doesn't match")
+	}
+
+	if expected.NonPersist != actual.NonPersist {
+		t.Fatal("Tuntap.Group doesn't match")
+	}
+}
+
 func TestLinkAddDelWithIndex(t *testing.T) {
 	tearDown := setUpNetlinkTest(t)
 	defer tearDown()
@@ -435,6 +508,13 @@ func TestLinkAddDelDummy(t *testing.T) {
 	defer tearDown()
 
 	testLinkAddDel(t, &Dummy{LinkAttrs{Name: "foo"}})
+}
+
+func TestLinkAddDelDummyWithGroup(t *testing.T) {
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	testLinkAddDel(t, &Dummy{LinkAttrs{Name: "foo", Group: 42}})
 }
 
 func TestLinkAddDelIfb(t *testing.T) {
@@ -598,7 +678,19 @@ func TestLinkAddDelVeth(t *testing.T) {
 	tearDown := setUpNetlinkTest(t)
 	defer tearDown()
 
-	veth := &Veth{LinkAttrs: LinkAttrs{Name: "foo", TxQLen: testTxQLen, MTU: 1400, NumTxQueues: testTxQueues, NumRxQueues: testRxQueues}, PeerName: "bar"}
+	peerMAC, _ := net.ParseMAC("00:12:34:56:78:02")
+
+	veth := &Veth{
+		LinkAttrs: LinkAttrs{
+			Name:        "foo",
+			TxQLen:      testTxQLen,
+			MTU:         1400,
+			NumTxQueues: testTxQueues,
+			NumRxQueues: testRxQueues,
+		},
+		PeerName:         "bar",
+		PeerHardwareAddr: peerMAC,
+	}
 	testLinkAddDel(t, veth)
 }
 
@@ -618,8 +710,10 @@ func TestLinkAddDelBond(t *testing.T) {
 			bond.AdActorSysPrio = 1
 			bond.AdUserPortKey = 1
 			bond.AdActorSystem, _ = net.ParseMAC("06:aa:bb:cc:dd:ee")
+			bond.ArpIpTargets = []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("1.1.1.2")}
 		case "balance-tlb":
 			bond.TlbDynamicLb = 1
+			bond.ArpIpTargets = []net.IP{net.ParseIP("1.1.1.2"), net.ParseIP("1.1.1.1")}
 		}
 		testLinkAddDel(t, bond)
 	}
@@ -855,7 +949,7 @@ func TestLinkSetNs(t *testing.T) {
 	}
 	defer newns.Close()
 
-	link := &Veth{LinkAttrs{Name: "foo"}, "bar"}
+	link := &Veth{LinkAttrs{Name: "foo"}, "bar", nil}
 	if err := LinkAdd(link); err != nil {
 		t.Fatal(err)
 	}
@@ -1050,6 +1144,27 @@ func TestLinkAddDelIPVlanL3(t *testing.T) {
 	testLinkAddDel(t, &ipv)
 }
 
+func TestLinkAddDelIPVlanVepa(t *testing.T) {
+	minKernelRequired(t, 4, 15)
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+	parent := &Dummy{LinkAttrs{Name: "foo"}}
+	if err := LinkAdd(parent); err != nil {
+		t.Fatal(err)
+	}
+
+	ipv := IPVlan{
+		LinkAttrs: LinkAttrs{
+			Name:        "bar",
+			ParentIndex: parent.Index,
+		},
+		Mode: IPVLAN_MODE_L3,
+		Flag: IPVLAN_FLAG_VEPA,
+	}
+
+	testLinkAddDel(t, &ipv)
+}
+
 func TestLinkAddDelIPVlanNoParent(t *testing.T) {
 	tearDown := setUpNetlinkTest(t)
 	defer tearDown()
@@ -1185,6 +1300,20 @@ func TestLinkSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	err = LinkSetGroup(link, 42)
+	if err != nil {
+		t.Fatalf("Could not set group: %v", err)
+	}
+
+	link, err = LinkByName("bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if link.Attrs().Group != 42 {
+		t.Fatal("Link group not changed")
+	}
 }
 
 func TestLinkSetARP(t *testing.T) {
@@ -1255,7 +1384,7 @@ func TestLinkSubscribe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	link := &Veth{LinkAttrs{Name: "foo", TxQLen: testTxQLen, MTU: 1400}, "bar"}
+	link := &Veth{LinkAttrs{Name: "foo", TxQLen: testTxQLen, MTU: 1400}, "bar", nil}
 	if err := LinkAdd(link); err != nil {
 		t.Fatal(err)
 	}
@@ -1302,7 +1431,7 @@ func TestLinkSubscribeWithOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	link := &Veth{LinkAttrs{Name: "foo", TxQLen: testTxQLen, MTU: 1400}, "bar"}
+	link := &Veth{LinkAttrs{Name: "foo", TxQLen: testTxQLen, MTU: 1400}, "bar", nil}
 	if err := LinkAdd(link); err != nil {
 		t.Fatal(err)
 	}
@@ -1336,7 +1465,7 @@ func TestLinkSubscribeAt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	link := &Veth{LinkAttrs{Name: "test", TxQLen: testTxQLen, MTU: 1400}, "bar"}
+	link := &Veth{LinkAttrs{Name: "test", TxQLen: testTxQLen, MTU: 1400}, "bar", nil}
 	if err := nh.LinkAdd(link); err != nil {
 		t.Fatal(err)
 	}
@@ -1378,7 +1507,7 @@ func TestLinkSubscribeListExisting(t *testing.T) {
 	}
 	defer nh.Delete()
 
-	link := &Veth{LinkAttrs{Name: "test", TxQLen: testTxQLen, MTU: 1400}, "bar"}
+	link := &Veth{LinkAttrs{Name: "test", TxQLen: testTxQLen, MTU: 1400}, "bar", nil}
 	if err := nh.LinkAdd(link); err != nil {
 		t.Fatal(err)
 	}
@@ -1503,6 +1632,17 @@ func TestLinkAddDelIptun(t *testing.T) {
 		PMtuDisc:  1,
 		Local:     net.IPv4(127, 0, 0, 1),
 		Remote:    net.IPv4(127, 0, 0, 1)})
+}
+
+func TestLinkAddDelIp6tnl(t *testing.T) {
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	testLinkAddDel(t, &Ip6tnl{
+		LinkAttrs: LinkAttrs{Name: "ip6tnltest"},
+		Local:     net.ParseIP("2001:db8::100"),
+		Remote:    net.ParseIP("2001:db8::200"),
+	})
 }
 
 func TestLinkAddDelSittun(t *testing.T) {
@@ -1839,15 +1979,36 @@ func TestLinkAddDelTuntap(t *testing.T) {
 	tearDown := setUpNetlinkTest(t)
 	defer tearDown()
 
+	// Mount sysfs so that sysfs gets the namespace tag of the current network namespace
+	// This is necessary so that /sys shows the network interfaces of the current namespace.
+	if err := syscall.Mount("sysfs", "/sys", "sysfs", syscall.MS_RDONLY, ""); err != nil {
+		t.Fatal("Cannot mount sysfs")
+	}
+
+	defer func() {
+		if err := syscall.Unmount("/sys", 0); err != nil {
+			t.Fatal("Cannot umount /sys")
+		}
+	}()
+
 	testLinkAddDel(t, &Tuntap{
 		LinkAttrs: LinkAttrs{Name: "foo"},
 		Mode:      TUNTAP_MODE_TAP})
-
 }
 
 func TestLinkAddDelTuntapMq(t *testing.T) {
 	tearDown := setUpNetlinkTest(t)
 	defer tearDown()
+
+	if err := syscall.Mount("sysfs", "/sys", "sysfs", syscall.MS_RDONLY, ""); err != nil {
+		t.Fatal("Cannot mount sysfs")
+	}
+
+	defer func() {
+		if err := syscall.Unmount("/sys", 0); err != nil {
+			t.Fatal("Cannot umount /sys")
+		}
+	}()
 
 	testLinkAddDel(t, &Tuntap{
 		LinkAttrs: LinkAttrs{Name: "foo"},
@@ -1909,6 +2070,81 @@ func TestVethPeerIndex(t *testing.T) {
 
 	if peerIndexTwo != linkOne.Attrs().Index {
 		t.Errorf("VethPeerIndex(%s) mismatch %d != %d", linkTwo.Attrs().Name, peerIndexTwo, linkOne.Attrs().Index)
+	}
+}
+
+func TestLinkSlaveBond(t *testing.T) {
+	minKernelRequired(t, 3, 13)
+
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	const (
+		bondName  = "foo"
+		slaveName = "fooFoo"
+	)
+
+	bond := NewLinkBond(LinkAttrs{Name: bondName})
+	bond.Mode = BOND_MODE_BALANCE_RR
+	if err := LinkAdd(bond); err != nil {
+		t.Fatal(err)
+	}
+	defer LinkDel(bond)
+
+	slaveDummy := &Dummy{LinkAttrs{Name: slaveName}}
+	if err := LinkAdd(slaveDummy); err != nil {
+		t.Fatal(err)
+	}
+	defer LinkDel(slaveDummy)
+
+	if err := LinkSetBondSlave(slaveDummy, bond); err != nil {
+		t.Fatal(err)
+	}
+
+	slaveLink, err := LinkByName(slaveName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	slave := slaveLink.Attrs().Slave
+	if slave == nil {
+		t.Errorf("for %s expected slave is not nil.", slaveName)
+	}
+
+	if slaveType := slave.SlaveType(); slaveType != "bond" {
+		t.Errorf("for %s expected slave type is 'bond', but '%s'", slaveName, slaveType)
+	}
+}
+
+func TestLinkSetBondSlaveQueueId(t *testing.T) {
+	minKernelRequired(t, 3, 13)
+
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	const (
+		bondName   = "foo"
+		slave1Name = "fooFoo"
+	)
+
+	bond := NewLinkBond(LinkAttrs{Name: bondName})
+	if err := LinkAdd(bond); err != nil {
+		t.Fatal(err)
+	}
+	defer LinkDel(bond)
+
+	slave := &Dummy{LinkAttrs{Name: slave1Name}}
+	if err := LinkAdd(slave); err != nil {
+		t.Fatal(err)
+	}
+	defer LinkDel(slave)
+
+	if err := LinkSetBondSlave(slave, bond); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := pkgHandle.LinkSetBondSlaveQueueId(slave, 1); err != nil {
+		t.Fatal(err)
 	}
 }
 

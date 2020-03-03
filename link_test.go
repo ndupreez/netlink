@@ -857,20 +857,7 @@ func TestLinkAddDelBridgeMaster(t *testing.T) {
 	}
 }
 
-func TestLinkSetUnsetResetMaster(t *testing.T) {
-	tearDown := setUpNetlinkTest(t)
-	defer tearDown()
-
-	master := &Bridge{LinkAttrs: LinkAttrs{Name: "foo"}}
-	if err := LinkAdd(master); err != nil {
-		t.Fatal(err)
-	}
-
-	newmaster := &Bridge{LinkAttrs: LinkAttrs{Name: "bar"}}
-	if err := LinkAdd(newmaster); err != nil {
-		t.Fatal(err)
-	}
-
+func testLinkSetUnsetResetMaster(t *testing.T, master, newmaster Link) {
 	slave := &Dummy{LinkAttrs{Name: "baz"}}
 	if err := LinkAdd(slave); err != nil {
 		t.Fatal(err)
@@ -923,6 +910,50 @@ func TestLinkSetUnsetResetMaster(t *testing.T) {
 	if err := LinkDel(slave); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestLinkSetUnsetResetMaster(t *testing.T) {
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	master := &Bridge{LinkAttrs: LinkAttrs{Name: "foo"}}
+	if err := LinkAdd(master); err != nil {
+		t.Fatal(err)
+	}
+
+	newmaster := &Bridge{LinkAttrs: LinkAttrs{Name: "bar"}}
+	if err := LinkAdd(newmaster); err != nil {
+		t.Fatal(err)
+	}
+
+	testLinkSetUnsetResetMaster(t, master, newmaster)
+
+	if err := LinkDel(newmaster); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := LinkDel(master); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLinkSetUnsetResetMasterBond(t *testing.T) {
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	master := NewLinkBond(LinkAttrs{Name: "foo"})
+	master.Mode = BOND_MODE_BALANCE_RR
+	if err := LinkAdd(master); err != nil {
+		t.Fatal(err)
+	}
+
+	newmaster := NewLinkBond(LinkAttrs{Name: "bar"})
+	newmaster.Mode = BOND_MODE_BALANCE_RR
+	if err := LinkAdd(newmaster); err != nil {
+		t.Fatal(err)
+	}
+
+	testLinkSetUnsetResetMaster(t, master, newmaster)
 
 	if err := LinkDel(newmaster); err != nil {
 		t.Fatal(err)
@@ -1749,6 +1780,45 @@ func expectMcastSnooping(t *testing.T, linkName string, expected bool) {
 	}
 
 	if actual := *bridge.(*Bridge).MulticastSnooping; actual != expected {
+		t.Fatalf("expected %t got %t", expected, actual)
+	}
+}
+
+func TestBridgeSetVlanFiltering(t *testing.T) {
+	minKernelRequired(t, 4, 4)
+
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	bridgeName := "foo"
+	bridge := &Bridge{LinkAttrs: LinkAttrs{Name: bridgeName}}
+	if err := LinkAdd(bridge); err != nil {
+		t.Fatal(err)
+	}
+	expectVlanFiltering(t, bridgeName, false)
+
+	if err := BridgeSetVlanFiltering(bridge, true); err != nil {
+		t.Fatal(err)
+	}
+	expectVlanFiltering(t, bridgeName, true)
+
+	if err := BridgeSetVlanFiltering(bridge, false); err != nil {
+		t.Fatal(err)
+	}
+	expectVlanFiltering(t, bridgeName, false)
+
+	if err := LinkDel(bridge); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func expectVlanFiltering(t *testing.T, linkName string, expected bool) {
+	bridge, err := LinkByName(linkName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if actual := *bridge.(*Bridge).VlanFiltering; actual != expected {
 		t.Fatalf("expected %t got %t", expected, actual)
 	}
 }

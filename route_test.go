@@ -206,6 +206,70 @@ func TestRouteReplace(t *testing.T) {
 
 }
 
+func TestRouteAppend(t *testing.T) {
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	// get loopback interface
+	link, err := LinkByName("lo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// bring the interface up
+	if err := LinkSetUp(link); err != nil {
+		t.Fatal(err)
+	}
+
+	// add a gateway route
+	dst := &net.IPNet{
+		IP:   net.IPv4(192, 168, 0, 0),
+		Mask: net.CIDRMask(24, 32),
+	}
+
+	ip := net.IPv4(127, 1, 1, 1)
+	route := Route{LinkIndex: link.Attrs().Index, Dst: dst, Src: ip}
+	if err := RouteAdd(&route); err != nil {
+		t.Fatal(err)
+	}
+	routes, err := RouteList(link, FAMILY_V4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 1 {
+		t.Fatal("Route not added properly")
+	}
+
+	ip = net.IPv4(127, 1, 1, 2)
+	route = Route{LinkIndex: link.Attrs().Index, Dst: dst, Src: ip}
+	if err := RouteAppend(&route); err != nil {
+		t.Fatal(err)
+	}
+
+	routes, err = RouteList(link, FAMILY_V4)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(routes) != 2 || !routes[1].Src.Equal(ip) {
+		t.Fatal("Route not append properly")
+	}
+
+	if err := RouteDel(&routes[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := RouteDel(&routes[1]); err != nil {
+		t.Fatal(err)
+	}
+	routes, err = RouteList(link, FAMILY_V4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 0 {
+		t.Fatal("Route not removed properly")
+	}
+}
+
 func TestRouteAddIncomplete(t *testing.T) {
 	tearDown := setUpNetlinkTest(t)
 	defer tearDown()
@@ -1329,6 +1393,72 @@ func TestMTURouteAddDel(t *testing.T) {
 	}
 
 	if err := RouteDel(&route); err != nil {
+		t.Fatal(err)
+	}
+	routes, err = RouteList(link, FAMILY_V4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 0 {
+		t.Fatal("Route not removed properly")
+	}
+}
+
+func TestRouteViaAddDel(t *testing.T) {
+	minKernelRequired(t, 5, 4)
+	tearDown := setUpNetlinkTest(t)
+	defer tearDown()
+
+	_, err := RouteList(nil, FAMILY_V4)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	link, err := LinkByName("lo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := LinkSetUp(link); err != nil {
+		t.Fatal(err)
+	}
+
+	route := &Route{
+		LinkIndex: link.Attrs().Index,
+		Dst: &net.IPNet{
+			IP:   net.IPv4(192, 168, 0, 0),
+			Mask: net.CIDRMask(24, 32),
+		},
+		MultiPath: []*NexthopInfo{
+			{
+				LinkIndex: link.Attrs().Index,
+				Via: &Via{
+					AddrFamily: FAMILY_V6,
+					Addr:       net.ParseIP("2001::1"),
+				},
+			},
+		},
+	}
+
+	if err := RouteAdd(route); err != nil {
+		t.Fatalf("route: %v, err: %v", route, err)
+	}
+
+	routes, err := RouteList(link, FAMILY_V4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 1 {
+		t.Fatal("Route not added properly")
+	}
+
+	got := routes[0].Via
+	want := route.MultiPath[0].Via
+	if !want.Equal(got) {
+		t.Fatalf("Route Via attribute does not match; got: %s, want: %s", got, want)
+	}
+
+	if err := RouteDel(route); err != nil {
 		t.Fatal(err)
 	}
 	routes, err = RouteList(link, FAMILY_V4)

@@ -2,7 +2,7 @@ package netlink
 
 import (
 	"bytes"
-	"github.com/vishvananda/netlink/nl"
+	"github.com/ndupreez/netlink/nl"
 	"io/ioutil"
 	"net"
 	"testing"
